@@ -1,85 +1,74 @@
-var lyricsContainer = document.createElement("div");
-lyricsContainer.style.cssText = "display: none; position: absolute; width: 70%; top: 50px; left: 15%; z-index: 2147483647; background: white; padding: 10px; box-shadow: 0px 0px 50px 0px rgba(0,0,0,0.75); border-radius: 10px; font-size: 14px; line-height: 1.5;";
-document.body.appendChild(lyricsContainer);
-
-function showLyrics(lyrics) {
-  lyricsContainer.style.display = "block";
-  lyricsContainer.innerHTML = lyrics;
+// Define the function to get lyrics from Azlyrics
+async function getLyricsFromAzlyrics(title, artist) {
+  const azlyricsUrl = `https://www.azlyrics.com/lyrics/${artist}/${title}.html`;
+  const response = await fetch(azlyricsUrl);
+  const text = await response.text();
+  const parser = new DOMParser();
+  const htmlDoc = parser.parseFromString(text, 'text/html');
+  let lyrics = htmlDoc.querySelector('.col-xs-12.col-lg-8.text-center div:not([class])');
+  if (lyrics) {
+    return lyrics.innerHTML.trim();
+  } else {
+    return null;
+  }
 }
 
-function searchGenius(title, artist) {
-  var searchUrl = "https://api.genius.com/search?q=" + encodeURIComponent(title) + " " + encodeURIComponent(artist);
-  var accessToken = "YOUR_ACCESS_TOKEN_HERE"; // Add your own Genius API access token here
-
-  fetch(searchUrl, {
+// Define the function to get lyrics from Genius
+async function getLyricsFromGenius(title, artist) {
+  const geniusUrl = `https://api.genius.com/search?q=${title} ${artist}`;
+  const response = await fetch(geniusUrl, {
     headers: {
-      "Authorization": "Bearer " + accessToken
-    }
-  }).then(function(response) {
-    return response.json();
-  }).then(function(data) {
-    if (data.response.hits.length > 0) {
-      var songId = data.response.hits[0].result.id;
-      var songUrl = "https://api.genius.com/songs/" + songId;
-      fetch(songUrl, {
-        headers: {
-          "Authorization": "Bearer " + accessToken
-        }
-      }).then(function(response) {
-        return response.json();
-      }).then(function(data) {
-        var lyrics = data.response.song.lyrics;
-        showLyrics(lyrics);
-      });
-    } else {
-      alert("Lyrics not found");
+      'Authorization': 'Bearer ' + GENIUS_ACCESS_TOKEN
     }
   });
-}
-
-function searchAzLyrics(title, artist) {
-  var searchUrl = "https://search.azlyrics.com/search.php?q=" + encodeURIComponent(title + " " + artist);
-  fetch(searchUrl).then(function(response) {
-    return response.text();
-  }).then(function(data) {
-    var parser = new DOMParser();
-    var htmlDoc = parser.parseFromString(data, "text/html");
-    var link = htmlDoc.querySelector("td a[href^='../lyrics/']");
-    if (link) {
-      var lyricsUrl = "https://www.azlyrics.com" + link.getAttribute("href").replace("..", "");
-      fetch(lyricsUrl).then(function(response) {
-        return response.text();
-      }).then(function(data) {
-        var parser = new DOMParser();
-        var htmlDoc = parser.parseFromString(data, "text/html");
-        var lyrics = htmlDoc.querySelector(".col-xs-12.col-lg-8.text-center div:not([class])").innerHTML;
-        showLyrics(lyrics);
-      });
-    } else {
-      alert("Lyrics not found");
+  const data = await response.json();
+  const songPath = data.response.hits[0].result.path;
+  const songUrl = `https://api.genius.com${songPath}`;
+  const songResponse = await fetch(songUrl, {
+    headers: {
+      'Authorization': 'Bearer ' + GENIUS_ACCESS_TOKEN
     }
   });
+  const songData = await songResponse.json();
+  return songData.response.song.description.plain;
 }
 
-function searchLyrics(title, artist) {
-  searchGenius(title, artist);
-  searchAzLyrics(title, artist);
+// Define the function to display lyrics
+function displayLyrics(lyrics) {
+  const lyricsBox = document.createElement('div');
+  lyricsBox.style.position = 'fixed';
+  lyricsBox.style.zIndex = '999999';
+  lyricsBox.style.top = '50%';
+  lyricsBox.style.left = '50%';
+  lyricsBox.style.transform = 'translate(-50%, -50%)';
+  lyricsBox.style.maxWidth = '90%';
+  lyricsBox.style.maxHeight = '80%';
+  lyricsBox.style.overflowY = 'auto';
+  lyricsBox.style.background = '#fff';
+  lyricsBox.style.padding = '20px';
+  lyricsBox.style.borderRadius = '10px';
+  lyricsBox.innerHTML = lyrics;
+  document.body.appendChild(lyricsBox);
 }
 
-function hideLyrics() {
-  lyricsContainer.style.display = "none";
-}
+// Get the title and artist from the YouTube video page
+const titleElement = document.querySelector('.ytp-title-link');
+const artistElement = document.querySelector('.ytp-subtitle-link');
+if (titleElement && artistElement) {
+  const title = titleElement.innerText;
+  const artist = artistElement.innerText;
 
-document.addEventListener("keydown", function(event) {
-  if (event.code === "Escape") {
-    hideLyrics();
+  // Get the lyrics from Azlyrics
+  let lyrics = await getLyricsFromAzlyrics(title, artist);
+  if (!lyrics) {
+    // If lyrics are not found on Azlyrics, get the lyrics from Genius
+    lyrics = await getLyricsFromGenius(title, artist);
   }
-});
 
-chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
-  if (message.type === "searchLyrics") {
-    var title = message.title;
-    var artist = message.artist;
-    searchLyrics(title, artist);
+  // Display the lyrics in a box on the page
+  if (lyrics) {
+    displayLyrics(lyrics);
+  } else {
+    console.log('Lyrics not found');
   }
-});
+}
